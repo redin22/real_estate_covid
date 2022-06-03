@@ -1,0 +1,239 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+```{r}
+rm(list=ls())
+install.packages("tidyverse")
+install.packages("zoo")
+library("tidyverse")
+library("zoo")
+
+```
+
+```{r}
+#load sandiego city
+sandiego_city<-read.csv("san_diego_ca_city_2.csv")
+dim(sandiego_city) 
+head(sandiego_city)
+sandiego_city<-sandiego_city%>% select(month_date_yyyymm,zip_code,everything())
+unique(sandiego_city$zip_name) #find SD city zipnames
+#load sandiego suburb
+sandiego_suburb<-read.csv("san_diego_ca_suburb_4.csv")
+dim(sandiego_suburb)
+head(sandiego_suburb)
+sandiego_suburb<-sandiego_suburb%>% select(month_date_yyyymm,zip_code,everything())
+unique(sandiego_suburb$zip_name)
+#san_francisco city and suburb
+san_francisco <-read.csv("san_francisco_ca_city_2.csv")
+dim(san_francisco)
+head(san_francisco)
+san_francisco<-san_francisco%>% select(month_date_yyyymm,zip_code,everything())
+unique(san_francisco$zip_name)
+san_francisco_sub <-read.csv("san_francisco_ca_suburb_4.csv")
+dim(san_francisco_sub)
+head(san_francisco_sub)
+san_francisco_sub<-san_francisco_sub%>% select(month_date_yyyymm,zip_code,everything())
+san_francisco_sub_zip<-unique(san_francisco_sub$zip_name)
+#san francisco city and suburb zipnames to classify later into density regions
+sanfr_zipname<-append(san_francisco_sub_zip,"san francisco, ca")
+#irvine city and suburb
+irvine_city <-read.csv("irvine_ca_city_2.csv")
+dim(irvine_city)
+head(irvine_city)
+irvine_city<-irvine_city%>% select(month_date_yyyymm,zip_code,everything())
+unique(irvine_city$zip_name)
+irvine_suburb <-read.csv("irvine_ca_suburb_2.csv")
+dim(irvine_suburb)
+head(irvine_suburb)
+irvine_suburb<-irvine_suburb%>% select(month_date_yyyymm,zip_code,everything())
+irvine_zipname<-unique(irvine_suburb$zip_name)
+irvine_zipname<-append(irvine_zipname,"irvine, ca")
+```
+
+```{r}
+#merge the datasets for cleaner and deeper analyis
+san_diego<-merge(sandiego_suburb,sandiego_city,all=TRUE)
+irvine<-merge(irvine_suburb,irvine_city,all=TRUE)
+sans<-merge(san_diego,san_francisco,all=TRUE)
+s<-merge(sans,san_francisco_sub,all=TRUE)
+df<-merge(s,irvine,all=TRUE)
+head(df)
+names(df)
+#convert date into correct data type
+df$Yr<-substring(df$month_date_yyyymm,1,4)    #"Aug 2017" "Jan 2022"
+df$month<-substring(df$month_date_yyyymm,5,6)
+df$Yr_Month<- as.yearmon(paste(df$Yr, df$month), "%Y %m")  #using zoo package
+#postal code, zipcode repeated so drop postal code column, drop missing values, drop original date column after cleaning
+df2<-df%>%
+  drop_na()%>%
+  select(-month_date_yyyymm)%>%
+  select(-postal_code)%>%
+  select(Yr_Month,zip_code,everything())
+
+#zip code classification as city or suburb
+#Irvine:
+irvine_city_zips<-c(92620, 92612, 92867, 92656, 92629)
+irvine_suburb_zips<-c(92602, 92603, 92618, 92660, 92672, 92677, 92688, 92691, 92692, 92886)
+#san diego
+san_die_city<-c(92101, 92102, 92103, 92104, 92105, 92107, 92113, 92114, 92139, 91950, 91932)
+san_Die_suburb<-c(91901,91902,91910,91911,91913,91914,91915,91935,91941,
+91942,91945,91977,92014,92019,92020,92021,92037,92040,92064,92067,92071,92075,92106,92108,92109,92110,92111,92115,92116,92117,92118,92119,92120,92122,92123,92126,92127,92128,92129,92130,92131,92154)
+#san_francisco
+sf_city<-c(94123, 94133, 94108, 94109, 94115, 94118, 94102, 94105, 94103, 94114, 94110, 94116, 94112, 94134)
+sf_subs<-c(94085,94086,94087,94107,94121,94124,94131,94301,94303,94401,94402,94403,94404,94503,94536,94538,94539,94541,94544,94545,94558,94559,94588,94589,94590,94591,94595,94596,94598,94601,94602,94603,94605,94606,94607,94610,94611,94618,94619,94621,94801,94804,94901,94903,94945,94947,94949,95110,95112,95116,95118,95120,95123,95124,95125,95126,95127,95128,95131,95132,95135,95136)
+
+city_zips<-append(irvine_city_zips,san_die_city)
+city_zips<-append(city_zips,sf_city)
+suburb_zips<-append(irvine_suburb_zips,san_Die_suburb)
+suburb_zips<-append(suburb_zips,sf_subs)
+
+#categorize into city/suburbs; region desnities and time in pandemic. Included Jan 2019 so as to get accurate data for Feb 2019. will drop Jan 2019 later
+df2<-df2%>% mutate(Type= case_when(zip_code %in% city_zips~"city",TRUE~"suburb"))
+df2<-df2%>% mutate(Region_density= case_when(zip_name%in%sanfr_zipname ~"High",zip_name %in%irvine_zipname~"Low", TRUE~"Medium")) %>% select(-c(id,quality_flag))%>%mutate(Time= case_when(Yr_Month >= "Jan 2019" & Yr_Month <="Nov 2019" ~"pre_pandemic",Yr_Month >="Feb 2020" & Yr_Month <="Nov 2020"~"pandemic",Yr_Month>="Feb 2021" & Yr_Month <="Nov 2021"~"post_pandemic"))
+
+#outlier removal
+summary(df2)
+#visualizing shows extreme values in nielsen rank, hotness rank, supply score, hotness score. getting mean/sd will skew it cox of large numbers so drop accordingly using formula and visuals.   
+hist(df2$nielsen_hh_rank) 
+hist(df2$supply_score)
+hist(df2$hotness_score)
+hist(df2$demand_score) #looks balanced btn 0-100
+hist(df2$hotness_rank)
+df2<-df2%>% dplyr::filter(nielsen_hh_rank <6000) %>% dplyr::filter(hotness_rank <8000)
+
+lower_bound_supply <- mean(df2$supply_score) - 3 * sd(df2$supply_score) #34.96295
+upper_bound_supply <- mean(df2$supply_score) + 3 * sd(df2$supply_score) #126.9367
+lower_bound_demand <- mean(df2$demand_score) - 3 * sd(df2$demand_score) #-20.25443
+upper_bound_demand <- mean(df2$demand_score) + 3 * sd(df2$demand_score) #124.1101
+lower_bound_hotness_score <- mean(df2$hotness_score) - 3 * sd(df2$hotness_score) #14.94648
+upper_bound_hotness_score <- mean(df2$hotness_score) + 3 * sd(df2$hotness_score) #117.9312
+
+df2<- df2%>% dplyr::filter(hotness_score > 15) %>% dplyr::filter(supply_score > 35) %>% drop_na()
+zips<-df2$zip_code
+```
+
+```{r}
+#some visuals. Evan did the others
+ggplot(df2)+ aes(x = Region_density, fill = Type) +
+  geom_bar(position = "fill")
+
+dp<- df2 %>%group_by (Type,Region_density,Yr_Month) %>%dplyr:: summarize(avg_hotness= mean(hotness_score),avg_hotrank=mean(hotness_rank),avg_sup=mean(supply_score),avg_demand=mean(demand_score),dom=mean(median_days_on_market),avg_liprice=mean(median_listing_price))
+
+ggplot(dp, aes(x = Yr_Month, y =avg_hotness,color=Type))+geom_line()+
+facet_wrap(~Region_density) +
+labs(title= "Avg Hotness score by density between 2019-2021",x="Date", y="avg hotness score")
+
+ggplot(dp, aes(x = Yr_Month, y =avg_sup,color=Type))+geom_line()+
+facet_wrap(~Region_density) +
+labs(title= "Avg supply score by density between 2019-2021",x="Date", y="avg supply score")
+
+ggplot(dp, aes(x = Yr_Month, y =avg_hotness,color=Region_density))+geom_line()+
+facet_wrap(~Region_density) +
+labs(title= "Avg Hotness rank by density between 2018-2022",x="Date", y="avg hotness score")
+
+
+```
+
+```{r}
+#calculate monthly change in hotness 
+df2<-df2 %>% arrange(zip_code) %>% mutate(hot_score_change= hotness_score-lag(hotness_score),hot_change_perc= ((hotness_score-lag(hotness_score))/(hotness_score))*100)%>% filter(Yr_Month !="Jan 2019")%>% select(Yr_Month,zip_code,hotness_score,hot_score_change,hot_change_perc,everything())
+
+df3<-df2 %>% dplyr::select(Yr_Month,zip_code,hotness_score,hot_score_change,hot_change_perc,hotness_rank,supply_score,demand_score,median_listing_price_vs_us,median_listing_price,median_days_on_market,nielsen_hh_rank,Type,Region_density,Time) 
+
+#correlation test
+correlation_vals<-df3%>% select(hotness_score,hotness_rank,demand_score,supply_score)
+cor(correlation_vals,method="pearson")
+cor.test(df3$hotness_score,df3$hotness_rank, method="pearson")
+cor.test(df3$hotness_score,df3$demand_score, method="pearson")
+cor.test(df3$hotness_score,df3$supply_score, method="pearson")
+
+#hotness mean, sd by type
+df3%>%select(Type,hotness_score)%>% group_by(Type)%>%summarise(mean_hotness=mean(hotness_score),sd_hotness=sd(hotness_score))
+df3 %>% group_by(Type,Time) %>% summarise_at(vars(hotness_score,hotness_rank), funs(mean, max, sd))
+
+
+#hotness mean, sd by region density
+df3%>%select(Region_density,hotness_score)%>% group_by(Region_density)%>%summarise(mean_hotness=mean(hotness_score),sd_hotness=sd(hotness_score))
+df3 %>% group_by(Region_density,Time) %>% summarise_at(vars(hotness_score,hotness_rank), funs(mean, max, sd))
+
+#mean,max,sd 
+df3 %>% group_by(Region_density,Type,Time) %>% summarise_at(vars(hotness_score,hotness_rank), funs(mean, max, sd))
+
+
+```
+
+```{r}
+df3$Type<-as.factor(df3$Type)
+df3$Time<-as.factor(df3$Time)
+df3$Region_density<-as.factor(df3$Region_density)
+df3$zip_code<-as.factor(df3$zip_code)
+#find change in hotness means for all
+hotness_change.mean <- aggregate(df3$hot_score_change,
+                      by = list(df3$Type, df3$Time,
+                              df3$Region_density),
+                      FUN = 'mean')
+colnames(hotness_change.mean) <- c("Type","Time","Region_density","mean change hotness_score")
+hotness_change.mean <- hotness_change.mean[order(hotness_change.mean$Type), ]
+hotness_change.mean
+
+#find anova means
+df3.mean <- aggregate(df3$hotness_score,
+                      by = list(df3$zip_code,df3$Type, df3$Time,
+                              df3$Region_density),
+                      FUN = 'mean')
+colnames(df3.mean) <- c("zip","Type","Time","Region_density","mean hotness_score")
+df3.mean <- df3.mean[order(df3.mean$zip), ]
+df3.mean
+
+#apply anova- time is within factor, type and density are between factors
+hotness_score.aov <- with(df3.mean,aov(`mean hotness_score` ~ Time*Region_density*Type + Error(zip / (Time))))
+summary(hotness_score.aov)
+
+#no significant main effect of Type. significant main effect of Time and Region density. There is significant interactions between time and region density, time and type, time,type and region density; and no interaction between region density and type.
+
+#Mean separation test using pairwise t-test corrected using benferroni
+pairwise.t.test(
+          x = df3.mean$`mean hotness_score`,
+          g = df3.mean$Time,
+          p.adjust.method = 'bonferroni')
+
+#shows no difference in change in hotness between pre-pandemic and pandemic times
+#but a difference between pandemic and post_pandemic as well as pre-pandemic and post-pandemic.Comparison between those times are significant/not.
+
+interaction.plot(df2$Region_density,df2$Time,df2$hotness_score)
+interaction.plot(df2$Type,df2$Time,df2$hotness_score)
+#pre-pandemic and pandemic are not significant, pre-pandemic and post are different,same as pandemic and post.
+#pandemic- high and medium has higher average scores,pre-pandemic- high has highest scores,medium then low. post- high lowest, low,medium. 
+
+```
+
+```{r}
+#anova interaction analysis using error bars
+x<-df3 %>% group_by(Region_density,Time) %>% summarise_at(vars(hotness_score), funs(mean, max, sd))
+install.packages("plotrix")
+library(plotrix)
+
+regions_bars<-df3 %>% group_by(Region_density,Time)%>% summarize(mean=mean(hotness_score),se=std.error(hotness_score))
+
+regions_se<-df3 %>% group_by(Region_density,Time)%>% summarize(mean=mean(hotness_score),se=sd(hotness_score)/sqrt(n()))
+
+densities <- c("Low", "Medium", "High")
+times<-c("pre_pandemic","pandemic","post_pandemic")
+ggplot(regions_se)+ aes(x=(Region_density),y=mean, fill = factor(Time,levels=times)) +
+geom_bar(stat='identity',position = position_dodge(.65))+  
+geom_errorbar(aes(ymin=mean-se, ymax=mean+se),colour = "black",  position = position_dodge(0.65), width = 0.2)+scale_x_discrete(limits = densities)+scale_fill_manual(name="Time",values = c("pre_pandemic"="#56B4E9","pandemic"="#D55E00","post_pandemic"="#009E73"))+
+  labs(x="Region density",y="average hotness score")
+
+```
+
+```{r}
+#other----attempted to check linear model. predicts perfectly!
+linear_mod<-lm(hotness_score~supply_score+demand_score,data=df2)
+summary(linear_mod)
+
+lr<-floor(predict(linear_mod,df2[-3]))
+mean(lr !=floor(df2[3])) #0.0002934272
+
+```
