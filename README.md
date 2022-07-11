@@ -1,7 +1,4 @@
-# real_estate_covid
-
-How did COVID-19 affect people's housing preferences?
-
+# How did COVID-19 affect people's housing preferences?
 
 This project examines how the COVID-19 pandemic has reshaped the real estate market by causing a shift in property demand from tier 1 cities to tier 2 and tier 3 cities. I 
 hypothesize that with the enforcement of stay at home orders and closure of social facilities, people were no longer attracted to big and expensive cities. They therefore moved to 
